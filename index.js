@@ -50,32 +50,40 @@ async function main() {
       try {
         result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
       } catch (e) {
-        if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
+        if (e.errno === 19) {
           callback();
-        } else {
-          // nothing to do, just let the client retry
         }
         return;
       }
-      io.emit('chat message', msg, result.lastID);
+      io.emit('chat message', msg, result.lastID);  // Emit message with ID
       callback();
     });
 
+    socket.on('delete message', async (messageId) => {
+      try {
+        await db.run('DELETE FROM messages WHERE id = ?', messageId);
+        io.emit('message deleted', messageId);
+      } catch (e) {
+        console.error('Failed to delete message:', e);
+      }
+    });
+
+    // Load existing messages for the new connection
     if (!socket.recovered) {
       try {
         await db.each('SELECT id, content FROM messages WHERE id > ?',
-          [socket.handshake.auth.serverOffset || 0],
+          [0],  // Fetch all messages
           (_err, row) => {
             socket.emit('chat message', row.content, row.id);
           }
-        )
+        );
       } catch (e) {
-        // something went wrong
+        console.error('Error fetching messages:', e);
       }
     }
   });
 
-  const port = process.env.PORT||3000;
+  const port = process.env.PORT || 3000;
 
   server.listen(port, () => {
     console.log(`server running at http://localhost:${port}`);
